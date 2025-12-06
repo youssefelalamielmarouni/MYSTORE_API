@@ -7,6 +7,8 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Cookie;
+use App\Services\CartService;
 
 class AuthController extends Controller
 {
@@ -30,7 +32,35 @@ class AuthController extends Controller
             'password' => Hash::make($data['password']),
         ]);
 
+        // send verification email
+        try {
+            $user->sendEmailVerificationNotification();
+        } catch (\Exception $e) {
+            // don't break registration on mail failure; log or handle as needed
+        }
+
         $token = $user->createToken('api-token')->plainTextToken;
+
+        // merge guest cart if present in cookie or payload
+        $guestItems = [];
+        $guestJson = $request->cookie('guest_cart');
+        if ($guestJson) {
+            $data = json_decode($guestJson, true);
+            if (is_array($data)) {
+                $guestItems = $data;
+            }
+        } elseif ($request->has('guest_cart')) {
+            $data = $request->input('guest_cart');
+            if (is_array($data)) {
+                $guestItems = $data;
+            }
+        }
+
+        if (! empty($guestItems)) {
+            $service = new CartService();
+            $service->mergeGuestCartIntoUser($user, $guestItems);
+            Cookie::queue(Cookie::forget('guest_cart'));
+        }
 
         return response()->json(['user' => $user, 'token' => $token], 201);
     }
@@ -53,6 +83,27 @@ class AuthController extends Controller
         }
 
         $token = $user->createToken('api-token')->plainTextToken;
+
+        // merge guest cart if present in cookie or payload
+        $guestItems = [];
+        $guestJson = $request->cookie('guest_cart');
+        if ($guestJson) {
+            $data = json_decode($guestJson, true);
+            if (is_array($data)) {
+                $guestItems = $data;
+            }
+        } elseif ($request->has('guest_cart')) {
+            $data = $request->input('guest_cart');
+            if (is_array($data)) {
+                $guestItems = $data;
+            }
+        }
+
+        if (! empty($guestItems)) {
+            $service = new CartService();
+            $service->mergeGuestCartIntoUser($user, $guestItems);
+            Cookie::queue(Cookie::forget('guest_cart'));
+        }
 
         return response()->json(['user' => $user, 'token' => $token], 200);
     }

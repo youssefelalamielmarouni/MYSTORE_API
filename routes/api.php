@@ -17,10 +17,25 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\AdminController;
+use App\Http\Controllers\Api\AdminDashboardController;
 use App\Http\Controllers\Api\CartController;
+use App\Http\Controllers\Api\GuestCartController;
+use App\Http\Controllers\Api\VerificationController;
 
 Route::post('register', [AuthController::class, 'register']);
 Route::post('login', [AuthController::class, 'login']);
+
+// Email verification (signed link)
+Route::get('email/verify/{id}/{hash}', [VerificationController::class, 'verify'])
+    ->name('verification.verify')
+    ->middleware('signed');
+
+// Guest cart (no auth required)
+Route::get('guest-cart', [GuestCartController::class, 'index']);
+Route::post('guest-cart/add', [GuestCartController::class, 'add']);
+Route::put('guest-cart/update', [GuestCartController::class, 'update']);
+Route::post('guest-cart/remove', [GuestCartController::class, 'remove']);
+Route::delete('guest-cart', [GuestCartController::class, 'clear']);
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('logout', [AuthController::class, 'logout']);
@@ -39,10 +54,30 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('cart', [CartController::class, 'clear']);
     Route::post('cart/checkout', [CartController::class, 'checkout']);
 
+    // Merge guest cart into authenticated user cart (call after login)
+    Route::post('cart/merge', [CartController::class, 'mergeGuest']);
+
+    // resend verification email
+    Route::post('email/verification-notification', [VerificationController::class, 'resend'])->name('verification.send');
+
+    // Payment and card management
+    Route::get('cards', [\App\Http\Controllers\Api\PaymentController::class, 'listCards']);
+    Route::post('cards', [\App\Http\Controllers\Api\PaymentController::class, 'addCard']);
+    Route::delete('cards/{card}', [\App\Http\Controllers\Api\PaymentController::class, 'deleteCard']);
+    Route::post('cards/{card}/default', [\App\Http\Controllers\Api\PaymentController::class, 'setDefault']);
+
+    // Orders
+    Route::get('orders', [\App\Http\Controllers\Api\PaymentController::class, 'myOrders']);
+    Route::get('orders/{order}', [\App\Http\Controllers\Api\PaymentController::class, 'showOrder']);
+
     Route::middleware('is_admin')->group(function () {
         Route::post('products', [ProductController::class, 'store']);
         Route::put('products/{product}', [ProductController::class, 'update']);
         Route::delete('products/{product}', [ProductController::class, 'destroy']);
+
+        // Product images
+        Route::post('products/{product}/images', [ProductController::class, 'uploadImages']);
+        Route::delete('products/{product}/images/{image}', [ProductController::class, 'destroyImage']);
 
         // Admin management
         Route::get('admin/users', [AdminController::class, 'index']);
@@ -50,5 +85,17 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('admin/users/{user}/promote', [AdminController::class, 'promote']);
         Route::post('admin/users/{user}/demote', [AdminController::class, 'demote']);
         Route::delete('admin/users/{user}', [AdminController::class, 'destroy']);
+        // create admin & role assignment
+        Route::post('admin/users/create-admin', [AdminController::class, 'createAdmin']);
+        Route::post('admin/users/{user}/assign-role', [AdminDashboardController::class, 'assignRole']);
+        Route::post('admin/users/{user}/revoke-role', [AdminDashboardController::class, 'revokeRole']);
+
+        // Dashboard metrics
+        Route::get('admin/metrics', [AdminDashboardController::class, 'metrics']);
+        // Admin-only: create admin and manage promotions
+        Route::post('admin/users/create-admin', [AdminController::class, 'createAdmin']);
+        Route::post('admin/promotions', [AdminController::class, 'createPromotion']);
+        Route::get('admin/promotions', [AdminController::class, 'listPromotions']);
+        Route::delete('admin/promotions/{promotion}', [AdminController::class, 'deletePromotion']);
     });
 });

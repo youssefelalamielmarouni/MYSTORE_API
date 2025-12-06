@@ -6,8 +6,12 @@ use App\Http\Controllers\Controller;
 use App\Models\CartItem;
 use App\Models\Cart;
 use App\Models\Product;
+use App\Models\Order;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Cookie;
+use App\Services\CartService;
 
 class CartController extends Controller
 {
@@ -120,14 +124,25 @@ class CartController extends Controller
 
     public function checkout(Request $request)
     {
-        $cart = $request->user()->cart()->with('items.product')->first();
+        $user = $request->user();
+        $cart = $user->cart()->with('items.product')->first();
 
         if (! $cart || $cart->items->isEmpty()) {
             return response()->json(['message' => 'Cart is empty'], 400);
         }
 
-        $summary = [];
+        // Validate payment input
+        $validator = Validator::make($request->all(), [
+            'payment_method' => 'required|in:card,cod',
+            'card_id' => 'required_if:payment_method,card|nullable|integer|exists:cards,id',
+            'promo_code' => 'sometimes|string|exists:promotions,code',
+        ]);
 
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        // Check stock availability
         foreach ($cart->items as $item) {
             $product = $item->product;
             if ($product->stock < $item->quantity) {
@@ -135,23 +150,103 @@ class CartController extends Controller
             }
         }
 
-        // Reduce stock and prepare summary
-        foreach ($cart->items as $item) {
-            $product = $item->product;
-            $product->stock -= $item->quantity;
-            $product->save();
+        // Build order and calculate total inside a transaction
+            DB::beginTransaction();
+        try {
+            $total = 0;
+            foreach ($cart->items as $item) {
+                $total += ($item->price * $item->quantity);
+            }
 
-            $summary[] = [
-                'product_id' => $product->id,
-                'name' => $product->name,
-                'quantity' => $item->quantity,
-                'price' => $item->price,
-            ];
+            $order = Order::create([
+                'user_id' => $user->id,
+                'total' => $total,
+                'status' => 'pending',
+                'payment_method' => $request->input('payment_method', 'cod'),
+                'payment_status' => 'pending',
+                'card_id' => $request->input('card_id'),
+            ]);
+
+            // Apply promotion if present
+            if ($request->filled('promo_code')) {
+                $promo = \App\Models\Promotion::where('code', $request->input('promo_code'))->first();
+                if ($promo && $promo->isActive()) {
+                    if ($promo->type === 'percent') {
+                        $discount = ($promo->value / 100) * $total;
+                    } else {
+                        $discount = $promo->value;
+                    }
+                    $total = max(0, $total - $discount);
+                    // update order total
+                    $order->total = $total;
+                    $order->save();
+                }
+            }
+
+            foreach ($cart->items as $item) {
+                $order->items()->create([
+                    'product_id' => $item->product->id,
+                    'quantity' => $item->quantity,
+                    'price' => $item->price,
+                ]);
+
+                // reduce stock
+                $product = $item->product;
+                $product->stock -= $item->quantity;
+                $product->save();
+            }
+
+            // simulate payment if card
+            if ($order->payment_method === 'card') {
+                // For simulation: we accept the charge always and mark paid.
+                $order->payment_status = 'paid';
+                $order->status = 'paid';
+                $order->save();
+            }
+
+            // clear cart
+            $cart->items()->delete();
+
+            DB::commit();
+
+            return response()->json(['message' => 'Order created', 'order' => $order->load('items')], 201);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['message' => 'Checkout failed', 'error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Merge guest cart (from cookie or payload) into authenticated user's cart.
+     */
+    public function mergeGuest(Request $request, CartService $service)
+    {
+        $user = $request->user();
+
+        // attempt to read guest cart from cookie or request body
+        $guestJson = $request->cookie('guest_cart');
+        $guestItems = [];
+        if ($guestJson) {
+            $data = json_decode($guestJson, true);
+            if (is_array($data)) {
+                $guestItems = $data;
+            }
+        } elseif ($request->has('guest_cart')) {
+            $data = $request->input('guest_cart');
+            if (is_array($data)) {
+                $guestItems = $data;
+            }
         }
 
-        // Clear cart
-        $cart->items()->delete();
+        if (empty($guestItems)) {
+            return response()->json(['message' => 'No guest cart to merge'], 400);
+        }
 
-        return response()->json(['message' => 'Checkout successful', 'items' => $summary], 200);
+        $cart = $service->mergeGuestCartIntoUser($user, $guestItems);
+
+        // clear cookie
+        Cookie::queue(Cookie::forget('guest_cart'));
+
+        return response()->json(['message' => 'Merged', 'cart' => $cart]);
     }
 }
