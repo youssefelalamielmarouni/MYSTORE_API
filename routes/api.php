@@ -92,6 +92,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
         // Dashboard metrics
         Route::get('admin/metrics', [AdminDashboardController::class, 'metrics']);
+        Route::get('admin/visitor-analytics', [AdminDashboardController::class, 'visitorAnalytics']);
         // Admin-only: create admin and manage promotions
         Route::post('admin/users/create-admin', [AdminController::class, 'createAdmin']);
         Route::post('admin/promotions', [AdminController::class, 'createPromotion']);
