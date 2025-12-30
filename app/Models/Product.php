@@ -26,6 +26,11 @@ class Product extends Model
         return $this->hasMany(ProductImage::class)->orderBy('position');
     }
 
+    public function orderItems()
+    {
+        return $this->hasMany(OrderItem::class);
+    }
+
     protected $appends = ['images_urls'];
 
     public function getImagesUrlsAttribute()

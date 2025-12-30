@@ -37,14 +37,19 @@ Route::put('guest-cart/update', [GuestCartController::class, 'update']);
 Route::post('guest-cart/remove', [GuestCartController::class, 'remove']);
 Route::delete('guest-cart', [GuestCartController::class, 'clear']);
 
+// Public product listing routes
+Route::get('products', [ProductController::class, 'index']);
+Route::get('products/all', [ProductController::class, 'allProducts']);
+Route::get('products/newest', [ProductController::class, 'newestProducts']);
+Route::get('products/most-sold', [ProductController::class, 'mostSoldProducts']);
+Route::get('products/{product}', [ProductController::class, 'show']);
+
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('logout', [AuthController::class, 'logout']);
     Route::get('profile', [AuthController::class, 'profile']);
     Route::put('profile', [AuthController::class, 'updateProfile']);
     
     // Product routes (admins only for write operations)
-    Route::get('products', [ProductController::class, 'index']);
-    Route::get('products/{product}', [ProductController::class, 'show']);
 
     // Cart routes for authenticated users
     Route::get('cart', [CartController::class, 'index']);
@@ -84,6 +89,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('admin/admins', [AdminController::class, 'admins']);
         Route::post('admin/users/{user}/promote', [AdminController::class, 'promote']);
         Route::post('admin/users/{user}/demote', [AdminController::class, 'demote']);
+        Route::put('admin/users/{user}', [AdminController::class, 'updateAdmin']);
         Route::delete('admin/users/{user}', [AdminController::class, 'destroy']);
         // create admin & role assignment
         Route::post('admin/users/create-admin', [AdminController::class, 'createAdmin']);

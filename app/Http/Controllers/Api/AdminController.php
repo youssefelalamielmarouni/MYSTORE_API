@@ -49,6 +49,37 @@ class AdminController extends Controller
         return response()->json($user, 201);
     }
 
+    // Update an admin (admins only)
+    public function updateAdmin(Request $request, User $user)
+    {
+        $this->authorizeAdmin($request);
+
+        // prevent updating yourself to avoid permission issues
+        if ($request->user()->id === $user->id) {
+            return response()->json(['message' => 'You cannot modify your own admin account via this endpoint'], 403);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'name' => 'sometimes|string|max:255',
+            'email' => 'sometimes|email|unique:users,email,' . $user->id,
+            'password' => 'sometimes|string|min:6',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        $data = $validator->validated();
+
+        if (isset($data['password'])) {
+            $data['password'] = bcrypt($data['password']);
+        }
+
+        $user->update($data);
+
+        return response()->json($user, 200);
+    }
+
     // Create a promotion code (admins only)
     public function createPromotion(Request $request)
     {

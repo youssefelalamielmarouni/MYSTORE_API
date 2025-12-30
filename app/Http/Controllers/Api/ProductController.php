@@ -134,4 +134,31 @@ class ProductController extends Controller
 
         return response()->json(['message' => 'Image deleted']);
     }
+
+    // Get all products with pagination
+    public function allProducts(Request $request)
+    {
+        return response()->json(Product::paginate(15));
+    }
+
+    // Get newest products (use `?limit=` query param)
+    public function newestProducts(Request $request)
+    {
+        $limit = (int) $request->query('limit', 10);
+        $products = Product::orderBy('created_at', 'desc')
+            ->limit($limit)
+            ->get();
+        return response()->json($products);
+    }
+
+    // Get most sold products (use `?limit=` query param)
+    public function mostSoldProducts(Request $request)
+    {
+        $limit = (int) $request->query('limit', 10);
+        $products = Product::withSum('orderItems', 'quantity')
+            ->orderBy('order_items_sum_quantity', 'desc')
+            ->limit($limit)
+            ->get();
+        return response()->json($products);
+    }
 }
